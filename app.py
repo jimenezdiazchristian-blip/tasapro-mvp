@@ -6,34 +6,27 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 import os
 import tempfile
-import re  # <--- IMPORTANTE: Librería nueva para limpieza nuclear
+import re
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="TasaPro España", page_icon="🏢", layout="wide")
 
-# CSS ESTILO DASHBOARD
+# ESTILOS PRO (Mantenemos tu diseño Dashboard)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: #1e293b; }
     section[data-testid="stSidebar"] { background-color: #0f172a; }
-    section[data-testid="stSidebar"] .css-17lntkn, section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] .stMarkdown { color: #e2e8f0 !important; }
-    section[data-testid="stSidebar"] .stTextInput > div > div > input { background-color: #1e293b; color: white; border: 1px solid #334155; }
-    .stApp { background-color: #f1f5f9; }
-    div[data-testid="stForm"] { background-color: #ffffff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+    section[data-testid="stSidebar"] * { color: #f1f5f9 !important; }
+    section[data-testid="stSidebar"] input { background-color: #1e293b !important; color: white !important; }
+    .stApp { background-color: #f8fafc; }
+    div[data-testid="stForm"] { background-color: white; padding: 2rem; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
     h1 { color: #1e3a8a; font-weight: 800; }
-    h3 { color: #334155; font-weight: 600; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-top: 1rem; }
-    .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div { border-radius: 6px; border: 1px solid #cbd5e1; padding: 0.5rem; }
-    .stTextInput > div > div > input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
-    .stButton > button { background: linear-gradient(to right, #2563eb, #1d4ed8); color: white; font-weight: bold; border: none; border-radius: 8px; padding: 0.75rem 1rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4); }
-    .stButton > button:hover { transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.5); }
-    div[data-testid="metric-container"] { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 5px solid #2563eb; padding: 15px; border-radius: 8px; }
-    label[data-testid="stMetricLabel"] { color: #1e40af !important; font-size: 1rem !important; }
-    div[data-testid="stMetricValue"] { color: #1e3a8a !important; font-size: 2rem !important; }
+    .stButton > button { background: linear-gradient(to right, #2563eb, #1d4ed8); color: white; font-weight: bold; border: none; border-radius: 8px; height: 3rem; width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LÓGICA BLINDADA ---
+# --- LÓGICA DE CONEXIÓN ---
 
 def get_xml_text(root, paths, default=""):
     if isinstance(paths, str): paths = [paths]
@@ -42,31 +35,21 @@ def get_xml_text(root, paths, default=""):
         if element is not None and element.text: return element.text
     return default
 
-def consultar_catastro_real(rc_input):
-    # --- LIMPIEZA NUCLEAR (REGEX) ---
-    # Esto elimina CUALQUIER cosa que no sea una letra (A-Z) o un número (0-9)
-    # Elimina espacios, tabulaciones, guiones, puntos, caracteres invisibles... TODO.
+def consultar_catastro_final(rc_input):
     rc = re.sub(r'[^A-Z0-9]', '', str(rc_input).upper())
-    
-    # Debug visual para el usuario (opcional, para que veas qué está enviando)
-    print(f"RC Limpia enviada: '{rc}'")
+    if len(rc) == 14: return {"error": "⚠️ ¡CUIDADO! Has introducido 14 caracteres (Parcela). Necesitas 20 (Inmueble)."}
+    if len(rc) != 20: return {"error": f"Longitud incorrecta ({len(rc)}). La referencia debe tener 20 caracteres."}
 
-    if len(rc) != 20: 
-        return {"error": f"Referencia incorrecta. Tras limpiar caracteres extraños quedan {len(rc)} caracteres. Deben ser 20 exactos."}
-
-    url = f"http://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC?Provincia=&Municipio=&RC={rc}"
+    url = f"https://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC?Provincia=&Municipio=&RC={rc}"
     
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=15, verify=False) 
         if response.status_code == 200:
             xml_text = response.text.replace('xmlns="http://www.catastro.meh.es/"', '').replace('xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"', '')
             root = ET.fromstring(xml_text)
-            
             err = root.find(".//lerr/err/des")
-            if err is not None: 
-                return {"error": f"Servidor Catastro responde: {err.text}"}
-            
-            # Extracción de datos
+            if err is not None: return {"error": f"Catastro dice: {err.text}"}
+
             tv = get_xml_text(root, [".//ldt/dom/tv", ".//domicilio/tv", ".//tv"], "")
             nv = get_xml_text(root, [".//ldt/dom/nv", ".//domicilio/nv", ".//nv"], "")
             calle = f"{tv} {nv}".strip()
@@ -75,7 +58,7 @@ def consultar_catastro_real(rc_input):
             provincia = get_xml_text(root, [".//dt/np", ".//prov/np", ".//np"], "")
             
             dir_full = f"{calle}, {numero}, {municipio} ({provincia})"
-            if not calle and not municipio: dir_full = "Dirección no disponible en Sede"
+            if not calle and not municipio: dir_full = "Dirección no detallada en este servicio"
             
             sup, ano = 0, 1990
             try:
@@ -86,201 +69,150 @@ def consultar_catastro_real(rc_input):
             except: pass
             
             return {"exito": True, "direccion": dir_full, "superficie": sup, "ano": ano}
-        return {"error": "Error conexión Catastro"}
-    except Exception as e: return {"error": str(e)}
+        return {"error": f"Error HTTP {response.status_code}"}
+    except Exception as e: return {"error": f"Error conexión: {str(e)}"}
 
-# CLASE PDF
+# --- CLASE PDF ---
 class InformePDF(FPDF):
     def header(self):
         if 'logo' in st.session_state and st.session_state.logo:
             try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_logo:
-                    tmp_logo.write(st.session_state.logo.getvalue())
-                    tmp_logo_path = tmp_logo.name
-                self.image(tmp_logo_path, 15, 10, 30)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as t:
+                    t.write(st.session_state.logo.getvalue()); n=t.name
+                self.image(n, 15, 10, 30)
             except: pass
-        self.set_font('Times', 'B', 10)
-        self.set_text_color(100, 100, 100)
-        self.cell(0, 5, 'INFORME TÉCNICO DE VALORACIÓN', 0, 1, 'R')
-        self.set_font('Times', '', 8)
-        self.cell(0, 5, 'Orden ECO/805/2003', 0, 1, 'R')
-        self.set_draw_color(26, 58, 89)
-        self.line(15, 30, 195, 30)
-        self.ln(25)
-    
+        self.set_font('Times', 'B', 10); self.set_text_color(100); self.cell(0,5,'INFORME TÉCNICO VALORACIÓN',0,1,'R')
+        self.set_font('Times', '', 8); self.cell(0,5,'Orden ECO/805/2003',0,1,'R'); self.set_draw_color(26,58,89); self.line(15,30,195,30); self.ln(25)
     def footer(self):
-        self.set_y(-20)
-        self.set_draw_color(200, 200, 200)
-        self.line(15, 275, 195, 275)
-        self.set_font('Arial', '', 7)
-        self.set_text_color(128, 128, 128)
-        self.multi_cell(0, 3, 'DOCUMENTO CONFIDENCIAL. Uso restringido.', 0, 'C')
-        self.set_y(-10)
-        self.set_font('Arial', 'I', 8)
-        self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'R')
+        self.set_y(-20); self.set_draw_color(200); self.line(15,275,195,275); self.set_font('Arial','',7); self.multi_cell(0,3,'Documento Confidencial',0,'C'); self.set_y(-10); self.cell(0,10,f'Página {self.page_no()}',0,0,'R')
+    def titulo(self, t): self.set_font('Arial','B',11); self.set_fill_color(240,240,245); self.set_text_color(26,58,89); self.cell(0,8,f"  {t}",0,1,'L',1); self.ln(4)
+    def dato(self, e, v): self.set_font('Arial','B',9); self.set_text_color(50); self.cell(50,6,e,0,0); self.set_font('Arial','',9); self.set_text_color(0); self.cell(0,6,str(v),0,1)
 
-    def titulo_seccion(self, titulo):
-        self.set_font('Arial', 'B', 11)
-        self.set_fill_color(240, 240, 245)
-        self.set_text_color(26, 58, 89)
-        self.cell(0, 8, f"  {titulo.upper()}", 0, 1, 'L', 1)
-        self.ln(4)
-
-    def campo_dato(self, etiqueta, valor):
-        self.set_font('Arial', 'B', 9)
-        self.set_text_color(50, 50, 50)
-        self.cell(50, 6, etiqueta, 0, 0)
-        self.set_font('Arial', '', 9)
-        self.set_text_color(0, 0, 0)
-        self.cell(0, 6, str(valor), 0, 1)
-
-def generar_pdf_completo(datos, fotos_list):
-    pdf = InformePDF()
-    pdf.add_page()
-    pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, f'CERTIFICADO DE TASACIÓN', 0, 1, 'C')
-    pdf.ln(5)
+def generar_pdf(d, fotos):
+    pdf = InformePDF(); pdf.add_page()
+    pdf.set_font('Arial','B',14); pdf.cell(0,10,'CERTIFICADO DE TASACIÓN',0,1,'C'); pdf.ln(5)
     
-    pdf.titulo_seccion("1. IDENTIFICACIÓN")
-    pdf.campo_dato("Solicitante:", datos['cliente'])
-    pdf.campo_dato("Técnico Tasador:", datos['tasador'])
-    pdf.campo_dato("Profesión:", datos['profesion'])
-    pdf.campo_dato("Nº Colegiado:", datos['colegiado'])
-    pdf.campo_dato("Empresa:", datos['empresa'])
-    pdf.ln(2)
-    pdf.campo_dato("Ref. Catastral:", datos['ref_catastral'])
-    pdf.campo_dato("Dirección:", (datos['direccion'][:75] + '..') if len(datos['direccion']) > 75 else datos['direccion'])
-    pdf.ln(5)
-
-    pdf.titulo_seccion("2. DATOS FÍSICOS")
+    # 1. IDENTIFICACIÓN
+    pdf.titulo("1. IDENTIFICACIÓN")
+    pdf.dato("Solicitante:", d['cliente']); pdf.dato("Tasador:", d['tasador']); pdf.dato("Colegiado:", d['colegiado']); pdf.dato("RC:", d['ref_catastral']); pdf.dato("Dirección:", d['direccion'][:70]); pdf.ln(5)
+    
+    # 2. DATOS FÍSICOS (AMPLIADO)
+    pdf.titulo("2. DATOS FÍSICOS Y DOTACIONES")
+    # Fila 1
     pdf.set_fill_color(255, 255, 255)
-    pdf.cell(60, 7, "Superficie", 1, 0, 'C')
-    pdf.cell(60, 7, "Año", 1, 0, 'C')
-    pdf.cell(60, 7, "Estado", 1, 1, 'C')
-    pdf.set_font('Arial', '', 10)
-    pdf.cell(60, 8, f"{datos['superficie']} m2", 1, 0, 'C')
-    pdf.cell(60, 8, f"{datos['antiguedad']}", 1, 0, 'C')
-    pdf.cell(60, 8, datos['estado'], 1, 1, 'C')
+    pdf.cell(60,7,"Superficie Const.",1,0,'C'); pdf.cell(60,7,"Año Const.",1,0,'C'); pdf.cell(60,7,"Estado",1,1,'C')
+    pdf.set_font('Arial','',10)
+    pdf.cell(60,8,f"{d['superficie']} m2",1,0,'C'); pdf.cell(60,8,f"{d['antiguedad']}",1,0,'C'); pdf.cell(60,8,d['estado'],1,1,'C')
+    
+    # Fila 2 (NUEVA: Ascensor, Garaje, Habs, Baños)
+    pdf.set_font('Arial','',8)
+    pdf.cell(45,7,"Ascensor",1,0,'C'); pdf.cell(45,7,"Garaje",1,0,'C'); pdf.cell(45,7,"Dormitorios",1,0,'C'); pdf.cell(45,7,"Baños",1,1,'C')
+    pdf.set_font('Arial','B',10)
+    pdf.cell(45,8,d['ascensor'],1,0,'C'); pdf.cell(45,8,d['garaje'],1,0,'C'); pdf.cell(45,8,str(d['dormitorios']),1,0,'C'); pdf.cell(45,8,str(d['banos']),1,1,'C')
     pdf.ln(5)
 
-    pdf.titulo_seccion("3. ANÁLISIS DE MERCADO")
-    pdf.set_font('Arial', '', 8)
-    pdf.cell(90, 6, "Dirección", 1, 0, 'L')
-    pdf.cell(30, 6, "Sup", 1, 0, 'C')
-    pdf.cell(30, 6, "Precio", 1, 0, 'C')
-    pdf.cell(30, 6, "Unitario", 1, 1, 'C')
-    for t in datos['testigos']:
-        pdf.cell(90, 6, t['dir'], 1, 0, 'L')
-        pdf.cell(30, 6, str(t['sup']), 1, 0, 'C')
-        pdf.cell(30, 6, str(t['precio']), 1, 0, 'C')
-        u = round(t['precio']/t['sup'], 2) if t['sup'] > 0 else 0
-        pdf.cell(30, 6, str(u), 1, 1, 'C')
-    pdf.ln(2)
-    pdf.set_font('Arial', 'B', 9)
-    pdf.cell(0, 6, f"Valor Medio Mercado: {datos['precio_m2_zona']} EUR/m2", 0, 1, 'R')
-    pdf.ln(5)
-
-    pdf.set_draw_color(26, 58, 89)
-    pdf.rect(35, pdf.get_y(), 140, 30)
-    pdf.set_y(pdf.get_y() + 5)
-    pdf.set_font('Arial', 'B', 18)
-    pdf.cell(0, 10, f"TASACIÓN: {datos['valor_final']} EUR", 0, 1, 'C')
-    pdf.set_font('Arial', '', 9)
-    pdf.cell(0, 8, f"Fecha: {datetime.date.today().strftime('%d/%m/%Y')}", 0, 1, 'C')
-    pdf.ln(15)
-    pdf.cell(0, 10, "Fdo: El Técnico Competente", 0, 1, 'C')
-
-    if fotos_list:
-        pdf.add_page()
-        pdf.titulo_seccion("ANEXO I: FOTOGRAFÍAS")
-        y_pos = pdf.get_y() + 10
-        for foto in fotos_list:
+    # 3. VALORACIÓN
+    pdf.titulo("3. CÁLCULO Y VALORACIÓN")
+    pdf.set_font('Arial','B',18); pdf.set_text_color(26,58,89); pdf.cell(0,10,f"{d['valor_final']} EUR",0,1,'C'); pdf.ln(10); pdf.set_font('Arial','',9); pdf.set_text_color(0); pdf.cell(0,10,"Fdo: El Técnico Competente",0,1,'C')
+    
+    if fotos:
+        pdf.add_page(); pdf.titulo("ANEXO I: FOTOS"); y=40
+        for f in fotos:
             try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_img:
-                    tmp_img.write(foto.getvalue())
-                    tmp_path = tmp_img.name
-                if y_pos > 220: pdf.add_page(); y_pos = 20
-                pdf.image(tmp_path, x=30, y=y_pos, w=150)
-                y_pos += 110 
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as t: t.write(f.getvalue()); n=t.name
+                if y>220: pdf.add_page(); y=20
+                pdf.image(n,x=30,y=y,w=150); y+=110
             except: pass
     return pdf.output(dest='S').encode('latin-1')
 
 # --- INTERFAZ ---
-with st.sidebar:
-    st.markdown("## ⚙️ Panel Técnico")
-    st.session_state.logo = st.file_uploader("Logotipo Empresa", type=['jpg','png'])
-    st.markdown("---")
-    tasador = st.text_input("Nombre del Técnico", "Juan Pérez")
-    profesion = st.text_input("Profesión", "Arquitecto Técnico")
-    colegiado = st.text_input("Nº Colegiado", "A-2938")
-    empresa = st.text_input("Empresa / Sociedad", "Tasaciones S.L.")
-
-st.title("🏛️ TasaPro España")
-st.caption("Software Profesional de Valoración Inmobiliaria (ECO/805/2003)")
-st.markdown("---")
-
-c1, c2 = st.columns([1, 2])
-with c1:
-    st.subheader("1. Importación")
-    rc_input = st.text_input("Referencia Catastral (20 car.)", placeholder="9872023VH5797S0001WB")
-    if st.button("📡 Conectar con Sede Catastro"):
-        with st.spinner("Consultando Sede Electrónica..."):
-            d = consultar_catastro_real(rc_input)
-        if "error" in d: st.error(f"❌ {d['error']}")
-        else: st.session_state.cat_data = d; st.success(f"✅ Datos Descargados: {d['direccion']}")
-
 if 'cat_data' not in st.session_state:
     st.session_state.cat_data = {"direccion": "", "superficie": 0, "ano": 1990}
 
+def cargar_demo(): st.session_state.rc_temp = "9872023VH5797S0001WB"
+
+with st.sidebar:
+    st.markdown("## ⚙️ Panel Técnico")
+    st.session_state.logo = st.file_uploader("Logotipo", type=['jpg','png'])
+    st.markdown("---")
+    tasador = st.text_input("Tasador", "Juan Pérez")
+    profesion = st.text_input("Profesión", "Arquitecto Técnico")
+    colegiado = st.text_input("Nº Colegiado", "A-2938")
+    empresa = st.text_input("Empresa", "Tasaciones S.L.")
+
+st.title("🏛️ TasaPro España v3.3")
+st.markdown("### Conexión Sede Electrónica")
+
+c1, c2, c3 = st.columns([1, 2, 1])
+with c1:
+    st.write(""); st.write("")
+    st.button("📝 Cargar Ejemplo", on_click=cargar_demo)
+
+with c2:
+    val_inicial = st.session_state.get("rc_temp", "")
+    rc_input = st.text_input("Referencia Catastral (20 dígitos)", value=val_inicial)
+
+with c3:
+    st.write(""); st.write("")
+    buscar = st.button("📡 BUSCAR DATOS")
+
+if buscar:
+    with st.spinner("Conectando con Servidor OVC..."):
+        res = consultar_catastro_final(rc_input)
+    if "error" in res: st.error(res['error'])
+    else:
+        st.session_state.cat_data = res
+        st.success(f"✅ Datos recuperados: {res['direccion']}")
+
+# FORMULARIO
 with st.form("main_form"):
     st.subheader("2. Datos del Inmueble")
-    c_dir = st.text_input("Dirección Completa", st.session_state.cat_data["direccion"])
-    cc1, cc2, cc3 = st.columns(3)
-    sup = cc1.number_input("Superficie (m2)", value=int(st.session_state.cat_data["superficie"]))
-    ano = cc2.number_input("Año Construcción", value=int(st.session_state.cat_data["ano"]))
-    estado = cc3.selectbox("Estado Conservación", ["Bueno", "Reformado", "A reformar", "Mal estado"])
-    cliente = st.text_input("Cliente / Solicitante")
+    c_dir = st.text_input("Dirección", st.session_state.cat_data["direccion"])
+    
+    # Fila 1: Datos Catastrales Básicos
+    k1, k2, k3 = st.columns(3)
+    sup = k1.number_input("Superficie (m2)", value=int(st.session_state.cat_data["superficie"]))
+    ano = k2.number_input("Año Construcción", value=int(st.session_state.cat_data["ano"]))
+    estado = k3.selectbox("Estado", ["Bueno", "Reformado", "A reformar", "Origen"])
+    
+    # Fila 2: Datos de Equipamiento (NUEVO)
+    st.markdown("##### Dotaciones y Distribución")
+    d1, d2, d3, d4 = st.columns(4)
+    ascensor = d1.selectbox("Ascensor", ["Sí", "No"])
+    garaje = d2.selectbox("Plaza Garaje", ["Sí", "No"])
+    dormitorios = d3.number_input("Nº Dormitorios", min_value=0, value=3)
+    banos = d4.number_input("Nº Baños", min_value=0, value=1)
+    
+    # Fila 3: Extras
+    e1, e2 = st.columns(2)
+    orientacion = e1.selectbox("Tipo", ["Exterior", "Interior"])
+    cliente = e2.text_input("Cliente / Solicitante")
     
     st.markdown("---")
-    st.subheader("3. Testigos de Mercado")
+    st.subheader("3. Valoración")
+    col_v1, col_v2 = st.columns(2)
+    m2 = col_v1.number_input("Valor Mercado (€/m2)", value=2000.0)
+    coef = col_v2.number_input("Coeficiente (0.20-2.00)", 0.20, 2.00, 1.00, 0.01)
     
-    tc1, tc2, tc3 = st.columns(3)
-    with tc1:
-        t1_e = st.number_input("Precio T1 (€)", value=180000)
-        t1_s = st.number_input("Sup T1 (m2)", value=90)
-    with tc2:
-        t2_e = st.number_input("Precio T2 (€)", value=195000)
-        t2_s = st.number_input("Sup T2 (m2)", value=95)
-    with tc3:
-        t3_e = st.number_input("Precio T3 (€)", value=175000)
-        t3_s = st.number_input("Sup T3 (m2)", value=85)
-    
-    prom = ((t1_e/t1_s if t1_s else 0) + (t2_e/t2_s if t2_s else 0) + (t3_e/t3_s if t3_s else 0)) / 3
-    st.caption(f"**Valor Unitario Medio Calculado: {prom:,.2f} €/m2**")
+    val = sup * m2 * coef
+    st.metric("VALOR DE TASACIÓN", f"{val:,.2f} €")
     
     st.markdown("---")
-    st.subheader("4. Valoración Final")
+    f1, f2 = st.columns(2)
+    f1.file_uploader("Nota Simple", type="pdf")
+    fotos = f2.file_uploader("Fotos", accept_multiple_files=True)
     
-    coef = st.number_input("Coeficiente Homogeneización", 0.20, 2.00, 1.00, 0.01, format="%.2f")
-    val_fin = sup * prom * coef
-    
-    st.metric("VALOR DE TASACIÓN", f"{val_fin:,.2f} €")
-    
-    st.markdown("#### Documentación")
-    col_d1, col_d2 = st.columns(2)
-    col_d1.file_uploader("Nota Simple", type="pdf")
-    fotos = col_d2.file_uploader("Fotos", accept_multiple_files=True)
-    
-    if st.form_submit_button("📄 EMITIR INFORME OFICIAL"):
-        if not cliente or sup == 0: st.error("Faltan datos obligatorios.")
+    if st.form_submit_button("📄 GENERAR INFORME"):
+        if not cliente or sup == 0:
+            st.error("Faltan datos obligatorios")
         else:
-            datos = {
-                "cliente": cliente, "tasador": tasador, "profesion": profesion, 
+            d = {
+                "cliente": cliente, "tasador": tasador, "profesion": profesion,
                 "colegiado": colegiado, "empresa": empresa, "ref_catastral": rc_input,
                 "direccion": c_dir, "superficie": sup, "antiguedad": ano, "estado": estado,
-                "precio_m2_zona": f"{prom:,.2f}", "valor_final": f"{val_fin:,.2f}",
-                "testigos": [{"dir":"T1","sup":t1_s,"precio":t1_e},{"dir":"T2","sup":t2_s,"precio":t2_e},{"dir":"T3","sup":t3_s,"precio":t3_e}]
+                "ascensor": ascensor, "garaje": garaje, 
+                "dormitorios": dormitorios, "banos": banos,
+                "valor_final": f"{val:,.2f}"
             }
-            pdf = generar_pdf_completo(datos, fotos)
-            st.success("¡Informe Generado!")
+            pdf = generar_pdf(d, fotos)
             st.download_button("⬇️ Descargar PDF", pdf, "Tasacion.pdf", "application/pdf")
