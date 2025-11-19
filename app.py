@@ -10,47 +10,57 @@ import tempfile
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="TasaPro Oficial", page_icon="⚖️", layout="wide")
 
-# --- FUNCIÓN ROBUSTA CONEXIÓN CATASTRO (CORREGIDA) ---
+# --- FUNCIÓN ROBUSTA CONEXIÓN CATASTRO ---
 def get_xml_text(root, paths, default=""):
     """Busca en varias rutas posibles para asegurar que encontramos el dato"""
     if isinstance(paths, str):
         paths = [paths]
     
     for path in paths:
+        # Intentamos buscar con y sin namespace por si acaso
         element = root.find(path)
         if element is not None and element.text:
             return element.text
     return default
 
-def consultar_catastro_real(rc):
+def consultar_catastro_real(rc_input):
+    # 1. LIMPIEZA DE DATOS (CRÍTICO PARA EVITAR EL ERROR)
+    # Quitamos espacios delante/detrás y lo ponemos en mayúsculas
+    rc = rc_input.strip().upper()
+    
     # URL Oficial
     url = f"http://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC?Provincia=&Municipio=&RC={rc}"
     
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            # TRUCO: Limpiamos el namespace para evitar errores de lectura
-            xml_clean = response.text.replace('xmlns="http://www.catastro.meh.es/"', '')
-            root = ET.fromstring(xml_clean)
+            # 2. TRUCO: Limpiamos TODOS los namespaces posibles del XML para facilitar la lectura
+            xml_text = response.text
+            xml_text = xml_text.replace('xmlns="http://www.catastro.meh.es/"', '')
+            xml_text = xml_text.replace('xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"', '')
             
-            # Buscar errores
+            root = ET.fromstring(xml_text)
+            
+            # 3. GESTIÓN DE ERRORES DEL SERVIDOR
             err = root.find(".//lerr/err/des")
             if err is not None:
-                return {"error": err.text}
+                # Si el error es de formato, damos un mensaje amigable
+                return {"error": f"Catastro dice: {err.text}. (Verifica que la referencia tenga 20 caracteres exactos)"}
 
-            # --- EXTRACCIÓN DE DIRECCIÓN (RUTAS CORREGIDAS) ---
-            # El catastro usa 'ldt/dom' para la dirección en consulta por RC
-            tv = get_xml_text(root, [".//ldt/dom/tv", ".//domicilio/tv"], "")   # Tipo Vía (CL, AV)
-            nv = get_xml_text(root, [".//ldt/dom/nv", ".//domicilio/nv"], "")   # Nombre Vía
+            # --- EXTRACCIÓN DE DIRECCIÓN ---
+            # Rutas posibles donde el catastro esconde la dirección
+            tv = get_xml_text(root, [".//ldt/dom/tv", ".//domicilio/tv", ".//tv"], "")
+            nv = get_xml_text(root, [".//ldt/dom/nv", ".//domicilio/nv", ".//nv"], "")
+            
             calle = f"{tv} {nv}".strip()
             
-            numero = get_xml_text(root, [".//ldt/dom/pnp", ".//domicilio/pnp"], "")
-            municipio = get_xml_text(root, [".//dt/nm", ".//muni/nm"], "")
-            provincia = get_xml_text(root, [".//dt/np", ".//prov/np"], "")
+            numero = get_xml_text(root, [".//ldt/dom/pnp", ".//domicilio/pnp", ".//pnp"], "")
+            municipio = get_xml_text(root, [".//dt/nm", ".//muni/nm", ".//nm"], "")
+            provincia = get_xml_text(root, [".//dt/np", ".//prov/np", ".//np"], "")
             
-            # Si no encuentra calle, devolvemos un aviso
             if not calle and not municipio:
-                direccion_completa = "Dirección no disponible en OVC (Introducir manual)"
+                 # A veces la respuesta es correcta pero la dirección viene vacía en ciertos inmuebles
+                direccion_completa = "Dirección no detallada en Sede (Rellenar manual)"
             else:
                 direccion_completa = f"{calle}, {numero}, {municipio} ({provincia})"
             
@@ -59,17 +69,17 @@ def consultar_catastro_real(rc):
             ano_construccion = 1990
             
             try:
-                # Superficie Construida (supc)
+                # Superficie
                 sup_txt = get_xml_text(root, [".//bico/bi/de/supc", ".//de/supc"])
                 if sup_txt: superficie = int(sup_txt)
                 
-                # Año Construcción (ant)
+                # Año
                 ant_txt = get_xml_text(root, [".//bico/bi/de/ant", ".//de/ant"])
                 if ant_txt: ano_construccion = int(ant_txt)
             except:
                 pass 
 
-            # Uso (Residencial, etc)
+            # Uso
             uso = get_xml_text(root, [".//bico/bi/de/uso", ".//de/uso"], "Residencial")
 
             return {
@@ -79,14 +89,13 @@ def consultar_catastro_real(rc):
                 "ano": ano_construccion,
                 "uso": uso
             }
-        return {"error": "Error conexión Catastro (Red)"}
+        return {"error": "Error de conexión con servidor Catastro"}
     except Exception as e:
-        return {"error": f"Excepción: {str(e)}"}
+        return {"error": f"Error técnico: {str(e)}"}
 
 # --- CLASE PDF COMPLETA ---
 class InformePDF(FPDF):
     def header(self):
-        # Intentar poner logo si existe
         if 'logo' in st.session_state and st.session_state.logo:
             try:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_logo:
@@ -101,7 +110,6 @@ class InformePDF(FPDF):
         self.cell(0, 5, 'INFORME TÉCNICO DE VALORACIÓN', 0, 1, 'R')
         self.set_font('Times', '', 8)
         self.cell(0, 5, 'Orden ECO/805/2003', 0, 1, 'R')
-        
         self.set_draw_color(26, 58, 89)
         self.line(15, 30, 195, 30)
         self.ln(25)
@@ -213,7 +221,7 @@ def generar_pdf_completo(datos, fotos_list):
                 pdf.image(tmp_path, x=30, y=y_pos, w=150)
                 y_pos += 110 
             except Exception as e:
-                print(f"Error foto: {e}")
+                pass
     
     return pdf.output(dest='S').encode('latin-1')
 
@@ -223,44 +231,47 @@ with st.sidebar:
     st.session_state.logo = st.file_uploader("Logo Empresa", type=['jpg','png'])
     tasador = st.text_input("Tasador", "Juan Pérez")
     
-st.title("🏛️ TasaPro Oficial v2.2")
+st.title("🏛️ TasaPro Oficial v2.3")
 
 # -- BÚSQUEDA CATASTRO --
 col_search, col_res = st.columns([1, 2])
 with col_search:
     st.subheader("1. Inmueble")
-    rc_input = st.text_input("Ref. Catastral", placeholder="Ej: 9872023VH5797S0001WB")
+    rc_input = st.text_input("Ref. Catastral (20 caracteres)", placeholder="9872023VH5797S0001WB")
+    
     if st.button("📡 Buscar Datos Oficiales"):
-        if len(rc_input) > 10:
-            with st.spinner("Conectando con Sede Electrónica..."):
+        if len(rc_input.strip()) < 18:
+            st.warning("⚠️ La referencia parece muy corta. Debe tener 20 caracteres.")
+        else:
+            with st.spinner("Conectando con Sede Electrónica del Catastro..."):
                 datos = consultar_catastro_real(rc_input)
+            
             if "error" in datos:
-                st.error(datos["error"])
+                st.error(f"❌ {datos['error']}")
             else:
                 st.session_state.cat_data = datos
-                st.success("Datos cargados correctamente")
-        else:
-            st.warning("Referencia corta o inválida")
+                st.success("✅ Datos oficiales cargados correctamente")
 
 if 'cat_data' not in st.session_state:
-    st.session_state.cat_data = {"direccion": "", "superficie": 100, "ano": 1990, "uso": "Residencial"}
+    st.session_state.cat_data = {"direccion": "", "superficie": 0, "ano": 1990, "uso": "Residencial"}
 
 # -- FORMULARIO --
 with st.form("main_form"):
     # Datos Inmueble
+    st.write("Datos recuperados:")
     c_dir = st.text_input("Dirección", st.session_state.cat_data["direccion"])
+    
     c1, c2, c3 = st.columns(3)
-    sup = c1.number_input("Superficie (m2)", value=st.session_state.cat_data["superficie"])
-    ano = c2.number_input("Año", value=st.session_state.cat_data["ano"])
+    sup = c1.number_input("Superficie (m2)", value=int(st.session_state.cat_data["superficie"]))
+    ano = c2.number_input("Año Construcción", value=int(st.session_state.cat_data["ano"]))
     estado = c3.selectbox("Estado", ["Bueno", "Reformado", "A reformar", "Mal estado"])
+    
     cliente = st.text_input("Cliente / Solicitante")
     
     st.markdown("---")
     
     # Testigos
     st.subheader("2. Estudio de Mercado (Testigos)")
-    st.info("Introduce 3 inmuebles similares.")
-    
     t1_c1, t1_c2, t1_c3 = st.columns([2,1,1])
     t1_dir = t1_c1.text_input("Testigo 1: Dirección", "Calle Ejemplo 1")
     t1_sup = t1_c2.number_input("Sup T1", value=90)
@@ -281,7 +292,7 @@ with st.form("main_form"):
     precio_m2_3 = t3_eur / t3_sup if t3_sup else 0
     promedio_zona = (precio_m2_1 + precio_m2_2 + precio_m2_3) / 3
     
-    st.caption(f"Precio medio: {promedio_zona:,.2f} €/m2")
+    st.caption(f"Precio medio calculado: {promedio_zona:,.2f} €/m2")
     
     st.markdown("---")
     st.subheader("3. Valoración Final")
@@ -293,14 +304,16 @@ with st.form("main_form"):
     
     st.markdown("---")
     st.subheader("4. Fotos y Documentación")
-    st.file_uploader("Adjuntar Nota Simple (PDF) - (Solo visual en demo)", type="pdf")
-    fotos = st.file_uploader("Adjuntar Fotos Inmueble (Se añadirán al PDF)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
+    st.file_uploader("Adjuntar Nota Simple (PDF) - (Demo)", type="pdf")
+    fotos = st.file_uploader("Adjuntar Fotos Inmueble", accept_multiple_files=True, type=['png', 'jpg', 'jpeg'])
     
     submitted = st.form_submit_button("📄 GENERAR INFORME DEFINITIVO")
 
 if submitted:
     if not cliente:
-        st.error("Falta el nombre del cliente")
+        st.error("⚠️ Falta el nombre del cliente")
+    elif sup == 0:
+        st.error("⚠️ La superficie es 0. Busca en catastro o rellénala manualmente.")
     else:
         datos_informe = {
             "cliente": cliente,
@@ -321,7 +334,7 @@ if submitted:
         
         pdf_bytes = generar_pdf_completo(datos_informe, fotos)
         
-        st.success("¡Informe generado!")
+        st.success("¡Informe generado correctamente!")
         st.download_button(
             "⬇️ Descargar PDF Oficial",
             data=pdf_bytes,
