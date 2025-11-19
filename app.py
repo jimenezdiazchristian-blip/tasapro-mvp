@@ -6,130 +6,34 @@ import xml.etree.ElementTree as ET
 from PIL import Image
 import os
 import tempfile
+import re  # <--- IMPORTANTE: Librería nueva para limpieza nuclear
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA (DISEÑO DASHBOARD DARK/LIGHT) ---
+# --- 1. CONFIGURACIÓN Y ESTÉTICA ---
 st.set_page_config(page_title="TasaPro España", page_icon="🏢", layout="wide")
 
-# CSS AVANZADO PARA ESTÉTICA PREMIUM
+# CSS ESTILO DASHBOARD
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-
-    /* Fuente Global */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        color: #1e293b;
-    }
-
-    /* --- BARRA LATERAL (SIDEBAR) OSCURA --- */
-    section[data-testid="stSidebar"] {
-        background-color: #0f172a; /* Azul noche muy oscuro */
-    }
-    /* Texto en sidebar */
-    section[data-testid="stSidebar"] .css-17lntkn, 
-    section[data-testid="stSidebar"] h1, 
-    section[data-testid="stSidebar"] h2, 
-    section[data-testid="stSidebar"] h3, 
-    section[data-testid="stSidebar"] label,
-    section[data-testid="stSidebar"] .stMarkdown {
-        color: #e2e8f0 !important; /* Blanco sucio para leer bien */
-    }
-    /* Inputs en sidebar */
-    section[data-testid="stSidebar"] .stTextInput > div > div > input {
-        background-color: #1e293b;
-        color: white;
-        border: 1px solid #334155;
-    }
-
-    /* --- FONDO PRINCIPAL --- */
-    .stApp {
-        background-color: #f1f5f9; /* Gris azulado muy suave (Slate 100) */
-    }
-
-    /* --- CONTENEDORES Y TARJETAS --- */
-    /* Hacemos que el formulario parezca una hoja de papel sobre el escritorio */
-    div[data-testid="stForm"] {
-        background-color: #ffffff;
-        padding: 2rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        border: 1px solid #e2e8f0;
-    }
-
-    /* Títulos Principales */
-    h1 {
-        color: #1e3a8a; /* Azul corporativo fuerte */
-        font-weight: 800;
-    }
-    
-    /* Subtítulos */
-    h3 {
-        color: #334155;
-        font-weight: 600;
-        border-bottom: 2px solid #e2e8f0;
-        padding-bottom: 0.5rem;
-        margin-top: 1rem;
-    }
-
-    /* --- INPUTS MODERNOS --- */
-    .stTextInput > div > div > input, 
-    .stNumberInput > div > div > input,
-    .stSelectbox > div > div > div {
-        border-radius: 6px;
-        border: 1px solid #cbd5e1;
-        padding: 0.5rem;
-        transition: all 0.3s;
-    }
-    .stTextInput > div > div > input:focus {
-        border-color: #2563eb;
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-    }
-
-    /* --- BOTÓN PRINCIPAL (GENERAR) --- */
-    .stButton > button {
-        background: linear-gradient(to right, #2563eb, #1d4ed8);
-        color: white;
-        font-weight: bold;
-        border: none;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        letter-spacing: 0.05em;
-        box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4);
-        transition: transform 0.1s ease-in-out;
-    }
-    .stButton > button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.5);
-    }
-
-    /* --- TARJETA DE PRECIO FINAL --- */
-    div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-        border-left: 5px solid #2563eb;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    label[data-testid="stMetricLabel"] {
-        color: #1e40af !important;
-        font-size: 1rem !important;
-    }
-    div[data-testid="stMetricValue"] {
-        color: #1e3a8a !important;
-        font-size: 2rem !important;
-    }
-
-    /* Mensajes de éxito/error más bonitos */
-    .stSuccess, .stError, .stWarning {
-        border-radius: 8px;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; color: #1e293b; }
+    section[data-testid="stSidebar"] { background-color: #0f172a; }
+    section[data-testid="stSidebar"] .css-17lntkn, section[data-testid="stSidebar"] h1, section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3, section[data-testid="stSidebar"] label, section[data-testid="stSidebar"] .stMarkdown { color: #e2e8f0 !important; }
+    section[data-testid="stSidebar"] .stTextInput > div > div > input { background-color: #1e293b; color: white; border: 1px solid #334155; }
+    .stApp { background-color: #f1f5f9; }
+    div[data-testid="stForm"] { background-color: #ffffff; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }
+    h1 { color: #1e3a8a; font-weight: 800; }
+    h3 { color: #334155; font-weight: 600; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; margin-top: 1rem; }
+    .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div { border-radius: 6px; border: 1px solid #cbd5e1; padding: 0.5rem; }
+    .stTextInput > div > div > input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+    .stButton > button { background: linear-gradient(to right, #2563eb, #1d4ed8); color: white; font-weight: bold; border: none; border-radius: 8px; padding: 0.75rem 1rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4); }
+    .stButton > button:hover { transform: scale(1.02); box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.5); }
+    div[data-testid="metric-container"] { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-left: 5px solid #2563eb; padding: 15px; border-radius: 8px; }
+    label[data-testid="stMetricLabel"] { color: #1e40af !important; font-size: 1rem !important; }
+    div[data-testid="stMetricValue"] { color: #1e3a8a !important; font-size: 2rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
-
-# --- LÓGICA DE NEGOCIO (MANTENIDA) ---
+# --- 2. LÓGICA BLINDADA ---
 
 def get_xml_text(root, paths, default=""):
     if isinstance(paths, str): paths = [paths]
@@ -139,17 +43,30 @@ def get_xml_text(root, paths, default=""):
     return default
 
 def consultar_catastro_real(rc_input):
-    rc = str(rc_input).replace(" ", "").replace("\t", "").replace("\n", "").replace("-", "").replace(".", "").upper()
-    if len(rc) != 20: return {"error": f"Referencia incorrecta ({len(rc)} caracteres). Deben ser 20."}
+    # --- LIMPIEZA NUCLEAR (REGEX) ---
+    # Esto elimina CUALQUIER cosa que no sea una letra (A-Z) o un número (0-9)
+    # Elimina espacios, tabulaciones, guiones, puntos, caracteres invisibles... TODO.
+    rc = re.sub(r'[^A-Z0-9]', '', str(rc_input).upper())
+    
+    # Debug visual para el usuario (opcional, para que veas qué está enviando)
+    print(f"RC Limpia enviada: '{rc}'")
+
+    if len(rc) != 20: 
+        return {"error": f"Referencia incorrecta. Tras limpiar caracteres extraños quedan {len(rc)} caracteres. Deben ser 20 exactos."}
+
     url = f"http://ovc.catastro.meh.es/ovcservweb/OVCSWLocalizacionRC/OVCCallejero.asmx/Consulta_DNPRC?Provincia=&Municipio=&RC={rc}"
+    
     try:
         response = requests.get(url)
         if response.status_code == 200:
             xml_text = response.text.replace('xmlns="http://www.catastro.meh.es/"', '').replace('xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"', '')
             root = ET.fromstring(xml_text)
-            err = root.find(".//lerr/err/des")
-            if err is not None: return {"error": f"Catastro: {err.text}"}
             
+            err = root.find(".//lerr/err/des")
+            if err is not None: 
+                return {"error": f"Servidor Catastro responde: {err.text}"}
+            
+            # Extracción de datos
             tv = get_xml_text(root, [".//ldt/dom/tv", ".//domicilio/tv", ".//tv"], "")
             nv = get_xml_text(root, [".//ldt/dom/nv", ".//domicilio/nv", ".//nv"], "")
             calle = f"{tv} {nv}".strip()
@@ -157,7 +74,8 @@ def consultar_catastro_real(rc_input):
             municipio = get_xml_text(root, [".//dt/nm", ".//muni/nm", ".//nm"], "")
             provincia = get_xml_text(root, [".//dt/np", ".//prov/np", ".//np"], "")
             
-            dir_full = f"{calle}, {numero}, {municipio} ({provincia})" if calle or municipio else "Dirección no disponible"
+            dir_full = f"{calle}, {numero}, {municipio} ({provincia})"
+            if not calle and not municipio: dir_full = "Dirección no disponible en Sede"
             
             sup, ano = 0, 1990
             try:
@@ -306,10 +224,10 @@ with c1:
     st.subheader("1. Importación")
     rc_input = st.text_input("Referencia Catastral (20 car.)", placeholder="9872023VH5797S0001WB")
     if st.button("📡 Conectar con Sede Catastro"):
-        with st.spinner("Descargando ficha..."):
+        with st.spinner("Consultando Sede Electrónica..."):
             d = consultar_catastro_real(rc_input)
-        if "error" in d: st.error(d['error'])
-        else: st.session_state.cat_data = d; st.success("✅ Datos Oficiales Descargados")
+        if "error" in d: st.error(f"❌ {d['error']}")
+        else: st.session_state.cat_data = d; st.success(f"✅ Datos Descargados: {d['direccion']}")
 
 if 'cat_data' not in st.session_state:
     st.session_state.cat_data = {"direccion": "", "superficie": 0, "ano": 1990}
@@ -325,7 +243,6 @@ with st.form("main_form"):
     
     st.markdown("---")
     st.subheader("3. Testigos de Mercado")
-    st.info("Introduce 3 comparables para calcular el valor unitario medio.")
     
     tc1, tc2, tc3 = st.columns(3)
     with tc1:
