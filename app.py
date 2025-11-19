@@ -7,8 +7,111 @@ from PIL import Image
 import os
 import tempfile
 
-# --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="TasaPro Oficial", page_icon="⚖️", layout="wide")
+# --- 1. CONFIGURACIÓN Y ESTÉTICA (CSS PRO) ---
+st.set_page_config(page_title="TasaPro España", page_icon="🏢", layout="wide")
+
+# Inyección de CSS personalizado para diseño profesional
+st.markdown("""
+    <style>
+    /* Importar fuente moderna */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Fondo general suave */
+    .stApp {
+        background-color: #F8FAFC;
+    }
+
+    /* Estilo de la Barra Lateral */
+    section[data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid #E2E8F0;
+        box-shadow: 2px 0 5px rgba(0,0,0,0.02);
+    }
+
+    /* Encabezados */
+    h1 {
+        color: #0F172A;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    h2, h3 {
+        color: #334155;
+        font-weight: 600;
+    }
+
+    /* Inputs y Selectboxes */
+    .stTextInput > div > div > input, 
+    .stNumberInput > div > div > input,
+    .stSelectbox > div > div > div {
+        background-color: #FFFFFF;
+        border: 1px solid #CBD5E1;
+        border-radius: 8px;
+        color: #334155;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #2563EB;
+        box-shadow: 0 0 0 2px rgba(37,99,235,0.2);
+    }
+
+    /* Botón Principal (Generar) */
+    .stButton > button {
+        background: linear-gradient(135deg, #1E40AF 0%, #1E3A8A 100%);
+        color: white;
+        border: none;
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        font-weight: 600;
+        box-shadow: 0 4px 6px -1px rgba(30, 58, 138, 0.2);
+        transition: all 0.2s ease;
+        width: 100%;
+    }
+    .stButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 8px -1px rgba(30, 58, 138, 0.3);
+        background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%);
+    }
+
+    /* Botón Secundario (Buscar Catastro) */
+    div[data-testid="column"] button {
+        background: #F1F5F9;
+        color: #0F172A;
+        border: 1px solid #CBD5E1;
+    }
+    div[data-testid="column"] button:hover {
+        background: #E2E8F0;
+        color: #1E3A8A;
+    }
+
+    /* Tarjeta de Resultado (Valor de Tasación) */
+    div[data-testid="metric-container"] {
+        background-color: #EFF6FF;
+        border: 1px solid #BFDBFE;
+        padding: 15px;
+        border-radius: 10px;
+        color: #172554;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    label[data-testid="stMetricLabel"] {
+        color: #1E40AF !important;
+        font-size: 0.9rem !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #1E3A8A !important;
+        font-weight: 700 !important;
+    }
+
+    /* Alertas y mensajes */
+    .stAlert {
+        border-radius: 8px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 2. LÓGICA (INTACTA) ---
 
 # --- FUNCIÓN CONEXIÓN CATASTRO ---
 def get_xml_text(root, paths, default=""):
@@ -195,7 +298,7 @@ def generar_pdf_completo(datos, fotos_list):
     
     return pdf.output(dest='S').encode('latin-1')
 
-# --- APP ---
+# --- APP INTERFAZ PRINCIPAL ---
 with st.sidebar:
     st.header("⚙️ Configuración Tasador")
     st.session_state.logo = st.file_uploader("Logotipo Empresa", type=['jpg','png'])
@@ -205,60 +308,74 @@ with st.sidebar:
     colegiado = st.text_input("Nº Colegiado", "A-2938")
     empresa = st.text_input("Empresa / Sociedad", "Tasaciones S.L.")
 
-st.title("🏛️ TasaPro Oficial v2.5")
+st.title("🏛️ TasaPro España")
+st.markdown("**Herramienta Profesional de Valoración Inmobiliaria ECO/805/2003**")
+st.markdown("---")
 
 col1, col2 = st.columns([1, 2])
 with col1:
     st.subheader("1. Inmueble")
     rc_input = st.text_input("Ref. Catastral (20 dígitos)", placeholder="9872023VH5797S0001WB")
-    if st.button("📡 Buscar Datos"):
-        with st.spinner("Consultando..."):
+    if st.button("📡 Buscar Datos Catastro"):
+        with st.spinner("Conectando con Sede Electrónica..."):
             datos = consultar_catastro_real(rc_input)
         if "error" in datos:
             st.error(f"❌ {datos['error']}")
         else:
             st.session_state.cat_data = datos
-            st.success("✅ Datos cargados")
+            st.success("✅ Datos oficiales cargados")
 
 if 'cat_data' not in st.session_state:
     st.session_state.cat_data = {"direccion": "", "superficie": 0, "ano": 1990, "uso": "Residencial"}
 
 with st.form("main_form"):
-    c_dir = st.text_input("Dirección", st.session_state.cat_data["direccion"])
+    c_dir = st.text_input("Dirección Completa", st.session_state.cat_data["direccion"])
     c1, c2 = st.columns(2)
     sup = c1.number_input("Superficie (m2)", value=int(st.session_state.cat_data["superficie"]))
-    ano = c2.number_input("Año", value=int(st.session_state.cat_data["ano"]))
-    estado = st.selectbox("Estado", ["Bueno", "Reformado", "A reformar", "Mal estado"])
+    ano = c2.number_input("Año Construcción", value=int(st.session_state.cat_data["ano"]))
+    estado = st.selectbox("Estado de Conservación", ["Bueno", "Reformado", "A reformar", "Mal estado"])
     cliente = st.text_input("Cliente / Solicitante")
     
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
     st.subheader("2. Testigos de Mercado")
+    st.info("Introduce 3 inmuebles comparables para el método de comparación.")
+    
     tc1, tc2, tc3 = st.columns(3)
-    t1_eur = tc1.number_input("Precio Testigo 1 (€)", value=180000)
-    t1_sup = tc1.number_input("Sup T1", value=90)
-    t2_eur = tc2.number_input("Precio Testigo 2 (€)", value=195000)
-    t2_sup = tc2.number_input("Sup T2", value=95)
-    t3_eur = tc3.number_input("Precio Testigo 3 (€)", value=175000)
-    t3_sup = tc3.number_input("Sup T3", value=85)
+    with tc1:
+        st.markdown("**Testigo 1**")
+        t1_eur = st.number_input("Precio T1 (€)", value=180000)
+        t1_sup = st.number_input("Sup T1 (m2)", value=90)
+    with tc2:
+        st.markdown("**Testigo 2**")
+        t2_eur = st.number_input("Precio T2 (€)", value=195000)
+        t2_sup = st.number_input("Sup T2 (m2)", value=95)
+    with tc3:
+        st.markdown("**Testigo 3**")
+        t3_eur = st.number_input("Precio T3 (€)", value=175000)
+        t3_sup = st.number_input("Sup T3 (m2)", value=85)
     
     promedio = ((t1_eur/t1_sup if t1_sup else 0) + (t2_eur/t2_sup if t2_sup else 0) + (t3_eur/t3_sup if t3_sup else 0)) / 3
-    st.caption(f"Media Mercado: {promedio:,.2f} €/m2")
+    st.markdown(f"**Precio Unitario Medio: `{promedio:,.2f} €/m2`**")
     
     st.markdown("---")
-    st.subheader("3. Valoración")
+    st.subheader("3. Valoración Final")
     
     # MODIFICADO: Campo Coeficiente con Casilla editable y Rango amplio (0.20 - 2.00)
-    coef = st.number_input("Coeficiente Homogeneización", min_value=0.20, max_value=2.00, value=1.00, step=0.01, format="%.2f", help="Modifica el valor escribiendo o usando las flechas (pasos de 0.01)")
+    coef = st.number_input("Coeficiente Homogeneización (0.20 - 2.00)", min_value=0.20, max_value=2.00, value=1.00, step=0.01, format="%.2f", help="Ajuste manual del valor según características específicas.")
     
     valor_final = sup * promedio * coef
-    st.metric("VALOR DE TASACIÓN", f"{valor_final:,.2f} €")
+    st.metric("VALOR DE TASACIÓN ESTIMADO", f"{valor_final:,.2f} €")
     
-    st.file_uploader("Adjuntar Nota Simple (Solo visual en demo)", type="pdf")
-    fotos = st.file_uploader("Adjuntar Fotos", accept_multiple_files=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("#### Documentación Adjunta")
+    col_doc1, col_doc2 = st.columns(2)
+    col_doc1.file_uploader("Adjuntar Nota Simple (PDF)", type="pdf")
+    fotos = col_doc2.file_uploader("Adjuntar Fotografías", accept_multiple_files=True)
     
-    if st.form_submit_button("📄 GENERAR INFORME"):
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.form_submit_button("📄 GENERAR INFORME OFICIAL"):
         if not cliente or sup == 0:
-            st.error("Faltan datos obligatorios")
+            st.error("⚠️ Por favor, rellena el Cliente y asegúrate de tener Superficie > 0.")
         else:
             datos = {
                 "cliente": cliente,
@@ -276,4 +393,5 @@ with st.form("main_form"):
                 ]
             }
             pdf_bytes = generar_pdf_completo(datos, fotos)
-            st.download_button("⬇️ Descargar PDF", pdf_bytes, "Tasacion_Oficial.pdf", "application/pdf")
+            st.success("¡Informe generado correctamente!")
+            st.download_button("⬇️ Descargar PDF Firmado", pdf_bytes, "Tasacion_Oficial.pdf", "application/pdf")
