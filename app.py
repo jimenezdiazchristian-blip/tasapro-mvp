@@ -209,3 +209,71 @@ st.title("🏛️ TasaPro Oficial v2.5")
 
 col1, col2 = st.columns([1, 2])
 with col1:
+    st.subheader("1. Inmueble")
+    rc_input = st.text_input("Ref. Catastral (20 dígitos)", placeholder="9872023VH5797S0001WB")
+    if st.button("📡 Buscar Datos"):
+        with st.spinner("Consultando..."):
+            datos = consultar_catastro_real(rc_input)
+        if "error" in datos:
+            st.error(f"❌ {datos['error']}")
+        else:
+            st.session_state.cat_data = datos
+            st.success("✅ Datos cargados")
+
+if 'cat_data' not in st.session_state:
+    st.session_state.cat_data = {"direccion": "", "superficie": 0, "ano": 1990, "uso": "Residencial"}
+
+with st.form("main_form"):
+    c_dir = st.text_input("Dirección", st.session_state.cat_data["direccion"])
+    c1, c2 = st.columns(2)
+    sup = c1.number_input("Superficie (m2)", value=int(st.session_state.cat_data["superficie"]))
+    ano = c2.number_input("Año", value=int(st.session_state.cat_data["ano"]))
+    estado = st.selectbox("Estado", ["Bueno", "Reformado", "A reformar", "Mal estado"])
+    cliente = st.text_input("Cliente / Solicitante")
+    
+    st.markdown("---")
+    st.subheader("2. Testigos de Mercado")
+    tc1, tc2, tc3 = st.columns(3)
+    t1_eur = tc1.number_input("Precio Testigo 1 (€)", value=180000)
+    t1_sup = tc1.number_input("Sup T1", value=90)
+    t2_eur = tc2.number_input("Precio Testigo 2 (€)", value=195000)
+    t2_sup = tc2.number_input("Sup T2", value=95)
+    t3_eur = tc3.number_input("Precio Testigo 3 (€)", value=175000)
+    t3_sup = tc3.number_input("Sup T3", value=85)
+    
+    promedio = ((t1_eur/t1_sup if t1_sup else 0) + (t2_eur/t2_sup if t2_sup else 0) + (t3_eur/t3_sup if t3_sup else 0)) / 3
+    st.caption(f"Media Mercado: {promedio:,.2f} €/m2")
+    
+    st.markdown("---")
+    st.subheader("3. Valoración")
+    
+    # MODIFICADO: Campo Coeficiente con Casilla editable y Rango amplio (0.20 - 2.00)
+    coef = st.number_input("Coeficiente Homogeneización", min_value=0.20, max_value=2.00, value=1.00, step=0.01, format="%.2f", help="Modifica el valor escribiendo o usando las flechas (pasos de 0.01)")
+    
+    valor_final = sup * promedio * coef
+    st.metric("VALOR DE TASACIÓN", f"{valor_final:,.2f} €")
+    
+    st.file_uploader("Adjuntar Nota Simple (Solo visual en demo)", type="pdf")
+    fotos = st.file_uploader("Adjuntar Fotos", accept_multiple_files=True)
+    
+    if st.form_submit_button("📄 GENERAR INFORME"):
+        if not cliente or sup == 0:
+            st.error("Faltan datos obligatorios")
+        else:
+            datos = {
+                "cliente": cliente,
+                "tasador": tasador,
+                "profesion": profesion,
+                "colegiado": colegiado,
+                "empresa": empresa,
+                "ref_catastral": rc_input,
+                "direccion": c_dir, "superficie": sup, "antiguedad": ano, "estado": estado,
+                "precio_m2_zona": f"{promedio:,.2f}", "valor_final": f"{valor_final:,.2f}",
+                "testigos": [
+                    {"dir": "Testigo 1", "sup": t1_sup, "precio": t1_eur},
+                    {"dir": "Testigo 2", "sup": t2_sup, "precio": t2_eur},
+                    {"dir": "Testigo 3", "sup": t3_sup, "precio": t3_eur}
+                ]
+            }
+            pdf_bytes = generar_pdf_completo(datos, fotos)
+            st.download_button("⬇️ Descargar PDF", pdf_bytes, "Tasacion_Oficial.pdf", "application/pdf")
